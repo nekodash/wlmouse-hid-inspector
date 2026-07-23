@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebHID Inspector — Mouse Battery Finder</title>
+<style>
+  :root {
+    --bg:#0d1117; --panel:#161b22; --border:#30363d; --fg:#e6edf3;
+    --muted:#8b949e; --accent:#2f81f7; --ok:#3fb950; --warn:#d29922; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  * { box-sizing:border-box; }
+  body { font-family:system-ui,sans-serif; margin:0; background:var(--bg); color:var(--fg); }
+  header { padding:16px 20px; border-bottom:1px solid var(--border); }
+  header h1 { margin:0; font-size:18px; }
+  header p { margin:4px 0 0; color:var(--muted); font-size:13px; }
+  main { padding:20px; max-width:1100px; margin:0 auto; display:grid; gap:16px; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:14px 16px; }
+  .panel h2 { margin:0 0 10px; font-size:14px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:7px 14px; font-size:13px; cursor:pointer; margin:2px; }
+  button.sec { background:#21262d; border:1px solid var(--border); color:var(--fg); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  input { background:#0d1117; border:1px solid var(--border); color:var(--fg); border-radius:6px; padding:6px 8px; font-family:var(--mono); }
+  label { font-size:13px; color:var(--muted); margin-right:4px; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:6px 0; }
+  #info { font-family:var(--mono); font-size:12px; line-height:1.6; }
+  #log { font-family:var(--mono); font-size:12px; background:#010409; border:1px solid var(--border); border-radius:6px; padding:10px; height:300px; overflow:auto; white-space:pre-wrap; }
+  .warn { color:var(--warn); }
+  .ok { color:var(--ok); }
+  .hl { background:var(--warn); color:#000; border-radius:2px; padding:0 2px; }
+  .pill { display:inline-block; background:#21262d; border:1px solid var(--border); border-radius:12px; padding:1px 8px; font-size:11px; margin-left:6px; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>WebHID Inspector <span class="pill">Mouse Battery Finder</span></h1>
+  <p>ワイヤレスマウスのバッテリー残量レポートを特定するための調査ツール。Chrome / Edge 専用（WebHID）。</p>
+</header>
+
+<main>
+  <div class="panel" id="secWarn" style="display:none">
+    <span class="warn">⚠ このページは安全なコンテキスト(HTTPS または localhost)ではないため WebHID を使用できません。Cloudflare Pages 等の https:// で開いてください。</span>
+  </div>
+
+  <div class="panel">
+    <h2>① 接続</h2>
+    <div class="row">
+      <button id="connect">デバイスを選ぶ (Connect)</button>
+      <button id="forget" class="sec" disabled>切断 (Forget)</button>
+      <span id="status" class="muted" style="color:var(--muted);font-size:13px">未接続</span>
+    </div>
+    <div id="info">—</div>
+  </div>
+
+  <div class="panel">
+    <h2>② Feature Report を全部読む(残量探索の第一歩)</h2>
+    <div class="row">
+      <button id="scanAll" disabled>全 Feature Report をスキャン</button>
+      <span style="color:var(--muted);font-size:12px">→ 返り値に 0x00〜0x64 (0〜100) っぽい値があれば残量候補</span>
+    </div>
+    <div class="row">
+      <label>reportId(10進)</label><input id="frId" value="0" size="4">
+      <button id="getFeature" class="sec" disabled>1件だけ getFeatureReport</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>③ 変化するバイトを探す(残量バイト特定の決め手)</h2>
+    <div class="row">
+      <label>reportId</label><input id="pollId" value="0" size="4">
+      <label>間隔(ms)</label><input id="pollMs" value="1000" size="6">
+      <button id="pollStart" class="sec" disabled>ポーリング開始</button>
+      <button id="pollStop" class="sec" disabled>停止</button>
+      <span style="color:var(--muted);font-size:12px">→ 前回から変化したバイトを<span class="hl">ハイライト</span>。充電/放電で動く位置が残量</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>④ コマンドを送る(取得に送信が要る機種向け)</h2>
+    <div class="row">
+      <label>reportId</label><input id="sndId" value="0" size="4">
+      <label>data(hex)</label><input id="sndData" placeholder="例: 02 00 00" size="30">
+      <button id="sendOut" class="sec" disabled>sendReport(Output)</button>
+      <button id="sendFeat" class="sec" disabled>sendFeatureReport</button>
+    </div>
+    <p style="color:var(--muted);font-size:12px;margin:4px 0 0">送信後、下のログに [INPUT] で応答が返らないか観察してください。</p>
+  </div>
+
+  <div class="panel">
+    <h2>ログ</h2>
+    <div class="row">
+      <button id="clear" class="sec">消去</button>
+      <button id="copy" class="sec">コピー</button>
+    </div>
+    <div id="log"></div>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const logEl = $('log');
+let device = null, pollTimer = null, lastPoll = null;
+
+function ts(){ const d = new Date(); return d.toTimeString().slice(0,8) + '.' + String(d.getMilliseconds()).padStart(3,'0'); }
+function log(msg, cls){ const line = `[${ts()}] ${msg}`; logEl.insertAdjacentHTML('beforeend', (cls?`<span class="${cls}">${line}</span>`:line) + '\n'); logEl.scrollTop = logEl.scrollHeight; }
+function hex(buf){ return [...new Uint8Array(buf.buffer||buf)].map(b=>b.toString(16).padStart(2,'0')).join(' '); }
+function parseHex(s){ return new Uint8Array((s||'').trim().split(/\s+/).filter(Boolean).map(x=>parseInt(x,16))); }
+function looksLikePct(arr){ return [...arr].map((b,i)=>({b,i})).filter(o=>o.b>0&&o.b<=100).map(o=>`data[${o.i}]=${o.b}`).join(' '); }
+
+if(!window.isSecureContext || !navigator.hid){ $('secWarn').style.display='block'; }
+
+$('connect').onclick = async () => {
+  try {
+    const devs = await navigator.hid.requestDevice({ filters: [] });
+    if(!devs.length){ log('選択されませんでした'); return; }
+    device = devs[0];
+    if(!device.opened) await device.open();
+    renderInfo();
+    device.addEventListener('inputreport', e => {
+      const s = looksLikePct(new Uint8Array(e.data.buffer));
+      log(`[INPUT] reportId=${e.reportId} data= ${hex(e.data)}` + (s?`   ← %候補: ${s}`:''), s?'ok':null);
+    });
+    ['forget','scanAll','getFeature','pollStart','sendOut','sendFeat'].forEach(id=>$(id).disabled=false);
+    $('status').textContent = '接続中';
+  } catch(err){ log('接続エラー: ' + err.message, 'warn'); }
+};
+
+$('forget').onclick = async () => {
+  stopPoll();
+  if(device){ try{ await device.forget(); }catch{} }
+  device = null; $('info').textContent='—'; $('status').textContent='未接続';
+  ['forget','scanAll','getFeature','pollStart','pollStop','sendOut','sendFeat'].forEach(id=>$(id).disabled=true);
+  log('切断しました');
+};
+
+function renderInfo(){
+  const vid = device.vendorId.toString(16).padStart(4,'0');
+  const pid = device.productId.toString(16).padStart(4,'0');
+  let h = `<b>${device.productName||'(no name)'}</b>  <span class="pill">VID=0x${vid}</span> <span class="pill">PID=0x${pid}</span><br>`;
+  device.collections.forEach((c,i)=>{
+    h += `<br>collection[${i}] usagePage=0x${(c.usagePage||0).toString(16)} usage=0x${(c.usage||0).toString(16)}<br>`;
+    h += `&nbsp;&nbsp;input:   [${(c.inputReports||[]).map(r=>r.reportId).join(', ')}]<br>`;
+    h += `&nbsp;&nbsp;output:  [${(c.outputReports||[]).map(r=>r.reportId).join(', ')}]<br>`;
+    h += `&nbsp;&nbsp;feature: [${(c.featureReports||[]).map(r=>r.reportId).join(', ')}]<br>`;
+  });
+  $('info').innerHTML = h;
+  log(`接続: ${device.productName} VID=0x${vid} PID=0x${pid}`, 'ok');
+}
+
+$('scanAll').onclick = async () => {
+  const ids = new Set();
+  device.collections.forEach(c => (c.featureReports||[]).forEach(r => ids.add(r.reportId)));
+  if(!ids.size){ log('feature report がありません。③のポーリングか④の送信を試してください', 'warn'); return; }
+  log(`--- feature scan (${[...ids].join(',')}) ---`);
+  for(const id of ids){
+    try { const d = await device.receiveFeatureReport(id); const s = looksLikePct(new Uint8Array(d.buffer));
+      log(`[FEATURE ${id}] ${hex(d)}` + (s?`   ← %候補: ${s}`:''), s?'ok':null);
+    } catch(err){ log(`[FEATURE ${id}] error: ${err.message}`, 'warn'); }
+  }
+};
+
+$('getFeature').onclick = async () => {
+  const id = parseInt($('frId').value,10);
+  try { const d = await device.receiveFeatureReport(id); const s = looksLikePct(new Uint8Array(d.buffer));
+    log(`[FEATURE ${id}] ${hex(d)}` + (s?`   ← %候補: ${s}`:''), s?'ok':null);
+  } catch(err){ log(`getFeature error: ${err.message}`, 'warn'); }
+};
+
+function stopPoll(){ if(pollTimer){ clearInterval(pollTimer); pollTimer=null; } lastPoll=null; $('pollStop').disabled=true; $('pollStart').disabled=false; }
+$('pollStop').onclick = stopPoll;
+$('pollStart').onclick = () => {
+  const id = parseInt($('pollId').value,10);
+  const ms = Math.max(200, parseInt($('pollMs').value,10)||1000);
+  $('pollStart').disabled=true; $('pollStop').disabled=false;
+  log(`--- polling feature reportId=${id} every ${ms}ms ---`);
+  pollTimer = setInterval(async () => {
+    try {
+      const d = await device.receiveFeatureReport(id);
+      const cur = new Uint8Array(d.buffer);
+      let out = '';
+      cur.forEach((b,i)=>{ const s=b.toString(16).padStart(2,'0'); out += (lastPoll && lastPoll[i]!==b)?`<span class="hl">${s}</span> `:`${s} `; });
+      log(`[POLL ${id}] ${out.trim()}`);
+      lastPoll = cur;
+    } catch(err){ log(`poll error: ${err.message}`, 'warn'); stopPoll(); }
+  }, ms);
+};
+
+$('sendOut').onclick = async () => {
+  const id = parseInt($('sndId').value,10), data = parseHex($('sndData').value);
+  try { await device.sendReport(id, data); log(`[SENT OUTPUT ${id}] ${hex(data)}`); }
+  catch(err){ log(`sendReport error: ${err.message}`, 'warn'); }
+};
+$('sendFeat').onclick = async () => {
+  const id = parseInt($('sndId').value,10), data = parseHex($('sndData').value);
+  try { await device.sendFeatureReport(id, data); log(`[SENT FEATURE ${id}] ${hex(data)}`); }
+  catch(err){ log(`sendFeature error: ${err.message}`, 'warn'); }
+};
+
+$('clear').onclick = () => logEl.textContent='';
+$('copy').onclick = () => { navigator.clipboard.writeText(logEl.textContent); log('ログをコピーしました', 'ok'); };
+</script>
+</body>
+</html>
