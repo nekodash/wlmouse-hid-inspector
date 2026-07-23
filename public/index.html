@@ -117,9 +117,15 @@ $('connect').onclick = async () => {
     device = devs[0];
     if(!device.opened) await device.open();
     renderInfo();
+    const lastInput = {};
     device.addEventListener('inputreport', e => {
-      const s = looksLikePct(new Uint8Array(e.data.buffer));
-      log(`[INPUT] reportId=${e.reportId} data= ${hex(e.data)}` + (s?`   ← %候補: ${s}`:''), s?'ok':null);
+      const cur = new Uint8Array(e.data.buffer);
+      const prev = lastInput[e.reportId];
+      let out = '';
+      cur.forEach((b,i)=>{ const s=b.toString(16).padStart(2,'0'); out += (prev && prev[i]!==b)?`<span class="hl">${s}</span> `:`${s} `; });
+      lastInput[e.reportId] = cur;
+      const pct = looksLikePct(cur);
+      log(`[INPUT ${e.reportId}] ${out.trim()}` + (pct?`   ← %候補: ${pct}`:''));
     });
     ['forget','scanAll','getFeature','pollStart','sendOut','sendFeat'].forEach(id=>$(id).disabled=false);
     $('status').textContent = '接続中';
