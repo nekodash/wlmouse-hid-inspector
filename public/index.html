@@ -54,6 +54,18 @@
   </div>
 
   <div class="panel">
+    <h2>🔋 バッテリー取得 (MIAO 8K 確定プロトコル)</h2>
+    <div class="row">
+      <button id="batOnce" disabled>1回取得</button>
+      <button id="batPoll" disabled>自動更新(10秒)</button>
+      <button id="batStop" class="sec" disabled>停止</button>
+      <span id="batOut" style="font-size:22px;font-weight:bold;margin-left:8px">—</span>
+    </div>
+    <p style="color:var(--muted);font-size:12px;margin:4px 0 0">
+      要求 <code>00 00 02 02 00 83 00</code> → 応答 <code>a1 .. 83 [flag] [pct]</code>（pct=残量%）</p>
+  </div>
+
+  <div class="panel">
     <h2>② Feature Report を全部読む(残量探索の第一歩)</h2>
     <div class="row">
       <button id="scanAll" disabled>全 Feature Report をスキャン</button>
@@ -127,16 +139,16 @@ $('connect').onclick = async () => {
       const pct = looksLikePct(cur);
       log(`[INPUT ${e.reportId}] ${out.trim()}` + (pct?`   ← %候補: ${pct}`:''));
     });
-    ['forget','scanAll','getFeature','pollStart','sendOut','sendFeat'].forEach(id=>$(id).disabled=false);
+    ['forget','scanAll','getFeature','pollStart','sendOut','sendFeat','batOnce','batPoll'].forEach(id=>$(id).disabled=false);
     $('status').textContent = '接続中';
   } catch(err){ log('接続エラー: ' + err.message, 'warn'); }
 };
 
 $('forget').onclick = async () => {
-  stopPoll();
+  stopPoll(); stopBat();
   if(device){ try{ await device.forget(); }catch{} }
-  device = null; $('info').textContent='—'; $('status').textContent='未接続';
-  ['forget','scanAll','getFeature','pollStart','pollStop','sendOut','sendFeat'].forEach(id=>$(id).disabled=true);
+  device = null; $('info').textContent='—'; $('status').textContent='未接続'; $('batOut').textContent='—';
+  ['forget','scanAll','getFeature','pollStart','pollStop','sendOut','sendFeat','batOnce','batPoll','batStop'].forEach(id=>$(id).disabled=true);
   log('切断しました');
 };
 
@@ -202,6 +214,30 @@ $('sendFeat').onclick = async () => {
   try { await device.sendFeatureReport(id, data); log(`[SENT FEATURE ${id}] ${hex(data)}`); }
   catch(err){ log(`sendFeature error: ${err.message}`, 'warn'); }
 };
+
+// ---- Battery (confirmed protocol: feature reportId 0, cmd 0x83) ----
+let batTimer = null;
+const BAT_REQ = [0x00, 0x00, 0x02, 0x02, 0x00, 0x83, 0x00];
+async function readBattery(){
+  const req = new Uint8Array(64); req.set(BAT_REQ);
+  await device.sendFeatureReport(0, req);
+  const dv = await device.receiveFeatureReport(0);
+  const a = new Uint8Array(dv.buffer);
+  if(a[5] !== 0x83){ log(`[BATTERY] 想定外の応答 cmd=0x${a[5].toString(16)} raw=${hex(dv)}`, 'warn'); return null; }
+  return { pct: a[7], flag: a[6], raw: hex(dv) };
+}
+async function showBattery(){
+  try {
+    const b = await readBattery();
+    if(!b) return;
+    $('batOut').textContent = `${b.pct}%` + (b.flag ? ` ⚡(flag=${b.flag})` : '');
+    log(`[BATTERY] ${b.pct}%  flag=${b.flag}  raw=${b.raw}`, 'ok');
+  } catch(err){ log(`battery error: ${err.message}`, 'warn'); }
+}
+function stopBat(){ if(batTimer){ clearInterval(batTimer); batTimer=null; } $('batStop').disabled=true; $('batPoll').disabled=false; }
+$('batOnce').onclick = showBattery;
+$('batPoll').onclick = () => { $('batPoll').disabled=true; $('batStop').disabled=false; showBattery(); batTimer=setInterval(showBattery, 10000); };
+$('batStop').onclick = stopBat;
 
 $('clear').onclick = () => logEl.textContent='';
 $('copy').onclick = () => { navigator.clipboard.writeText(logEl.textContent); log('ログをコピーしました', 'ok'); };
