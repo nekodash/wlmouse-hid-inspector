@@ -112,7 +112,7 @@
 <script>
 const $ = id => document.getElementById(id);
 const logEl = $('log');
-let device = null, pollTimer = null, lastPoll = null;
+let device = null, pollTimer = null, lastPoll = null, devices = [];
 
 function ts(){ const d = new Date(); return d.toTimeString().slice(0,8) + '.' + String(d.getMilliseconds()).padStart(3,'0'); }
 function log(msg, cls){ const line = `[${ts()}] ${msg}`; logEl.insertAdjacentHTML('beforeend', (cls?`<span class="${cls}">${line}</span>`:line) + '\n'); logEl.scrollTop = logEl.scrollHeight; }
@@ -122,48 +122,57 @@ function looksLikePct(arr){ return [...arr].map((b,i)=>({b,i})).filter(o=>o.b>0&
 
 if(!window.isSecureContext || !navigator.hid){ $('secWarn').style.display='block'; }
 
+function attachInput(d){
+  const lastInput = {};
+  d.addEventListener('inputreport', e => {
+    const cur = new Uint8Array(e.data.buffer);
+    const prev = lastInput[e.reportId];
+    let out = '';
+    cur.forEach((b,i)=>{ const s=b.toString(16).padStart(2,'0'); out += (prev && prev[i]!==b)?`<span class="hl">${s}</span> `:`${s} `; });
+    lastInput[e.reportId] = cur;
+    const pct = looksLikePct(cur);
+    log(`[INPUT ${e.reportId}] ${out.trim()}` + (pct?`   ← %候補: ${pct}`:''));
+  });
+}
+
 $('connect').onclick = async () => {
   try {
-    const devs = await navigator.hid.requestDevice({ filters: [] });
-    if(!devs.length){ log('選択されませんでした'); return; }
-    device = devs[0];
-    if(!device.opened) await device.open();
+    await navigator.hid.requestDevice({ filters: [] });     // 許可を得る
+    // 許可済みの全インターフェイスを取得(同じ物理デバイスでも複数HidDeviceになる)
+    devices = await navigator.hid.getDevices();
+    if(!devices.length){ log('デバイスが見つかりません', 'warn'); return; }
+    for(const d of devices){
+      try { if(!d.opened) await d.open(); attachInput(d); }
+      catch(e){ log(`open失敗: ${d.productName} (${e.message})`, 'warn'); }
+    }
+    device = devices[0];
     renderInfo();
-    const lastInput = {};
-    device.addEventListener('inputreport', e => {
-      const cur = new Uint8Array(e.data.buffer);
-      const prev = lastInput[e.reportId];
-      let out = '';
-      cur.forEach((b,i)=>{ const s=b.toString(16).padStart(2,'0'); out += (prev && prev[i]!==b)?`<span class="hl">${s}</span> `:`${s} `; });
-      lastInput[e.reportId] = cur;
-      const pct = looksLikePct(cur);
-      log(`[INPUT ${e.reportId}] ${out.trim()}` + (pct?`   ← %候補: ${pct}`:''));
-    });
     ['forget','scanAll','getFeature','pollStart','sendOut','sendFeat','batOnce','batPoll'].forEach(id=>$(id).disabled=false);
-    $('status').textContent = '接続中';
+    $('status').textContent = `接続中 (${devices.length} interface)`;
   } catch(err){ log('接続エラー: ' + err.message, 'warn'); }
 };
 
 $('forget').onclick = async () => {
   stopPoll(); stopBat();
-  if(device){ try{ await device.forget(); }catch{} }
-  device = null; $('info').textContent='—'; $('status').textContent='未接続'; $('batOut').textContent='—';
+  for(const d of devices){ try{ await d.forget(); }catch{} }
+  devices = []; device = null; $('info').textContent='—'; $('status').textContent='未接続'; $('batOut').textContent='—';
   ['forget','scanAll','getFeature','pollStart','pollStop','sendOut','sendFeat','batOnce','batPoll','batStop'].forEach(id=>$(id).disabled=true);
   log('切断しました');
 };
 
 function renderInfo(){
-  const vid = device.vendorId.toString(16).padStart(4,'0');
-  const pid = device.productId.toString(16).padStart(4,'0');
-  let h = `<b>${device.productName||'(no name)'}</b>  <span class="pill">VID=0x${vid}</span> <span class="pill">PID=0x${pid}</span><br>`;
-  device.collections.forEach((c,i)=>{
-    h += `<br>collection[${i}] usagePage=0x${(c.usagePage||0).toString(16)} usage=0x${(c.usage||0).toString(16)}<br>`;
-    h += `&nbsp;&nbsp;input:   [${(c.inputReports||[]).map(r=>r.reportId).join(', ')}]<br>`;
-    h += `&nbsp;&nbsp;output:  [${(c.outputReports||[]).map(r=>r.reportId).join(', ')}]<br>`;
-    h += `&nbsp;&nbsp;feature: [${(c.featureReports||[]).map(r=>r.reportId).join(', ')}]<br>`;
+  let h = '';
+  devices.forEach((dev, di) => {
+    const vid = dev.vendorId.toString(16).padStart(4,'0');
+    const pid = dev.productId.toString(16).padStart(4,'0');
+    h += `<b>device[${di}] ${dev.productName||'(no name)'}</b>  <span class="pill">VID=0x${vid}</span> <span class="pill">PID=0x${pid}</span> <span class="pill">${dev.opened?'opened':'closed'}</span><br>`;
+    dev.collections.forEach((c,i)=>{
+      h += `&nbsp;&nbsp;collection[${i}] usagePage=0x${(c.usagePage||0).toString(16)} usage=0x${(c.usage||0).toString(16)} — in[${(c.inputReports||[]).map(r=>r.reportId).join(',')}] out[${(c.outputReports||[]).map(r=>r.reportId).join(',')}] feat[${(c.featureReports||[]).map(r=>r.reportId).join(',')}]<br>`;
+    });
+    h += '<br>';
   });
   $('info').innerHTML = h;
-  log(`接続: ${device.productName} VID=0x${vid} PID=0x${pid}`, 'ok');
+  log(`接続: ${devices.length} interface(s) granted`, 'ok');
 }
 
 $('scanAll').onclick = async () => {
@@ -219,19 +228,26 @@ $('sendFeat').onclick = async () => {
 let batTimer = null;
 const BAT_REQ = [0x00, 0x00, 0x02, 0x02, 0x00, 0x83, 0x00];
 async function readBattery(){
-  const req = new Uint8Array(64); req.set(BAT_REQ);
-  await device.sendFeatureReport(0, req);
-  const dv = await device.receiveFeatureReport(0);
-  const a = new Uint8Array(dv.buffer);
-  if(a[5] !== 0x83){ log(`[BATTERY] 想定外の応答 cmd=0x${a[5].toString(16)} raw=${hex(dv)}`, 'warn'); return null; }
-  return { pct: a[7], flag: a[6], raw: hex(dv) };
+  let lastErr = '';
+  for(const d of devices){
+    try {
+      const req = new Uint8Array(64); req.set(BAT_REQ);
+      await d.sendFeatureReport(0, req);
+      const dv = await d.receiveFeatureReport(0);
+      const a = new Uint8Array(dv.buffer);
+      if(a[5] === 0x83){ return { pct: a[7], flag: a[6], raw: hex(dv), dev: d.productName }; }
+      lastErr = `cmd=0x${(a[5]||0).toString(16)}`;
+    } catch(e){ lastErr = e.message; }
+  }
+  log(`[BATTERY] どのインターフェイスからも 0x83 応答なし (最後: ${lastErr})`, 'warn');
+  return null;
 }
 async function showBattery(){
   try {
     const b = await readBattery();
     if(!b) return;
     $('batOut').textContent = `${b.pct}%` + (b.flag ? ` ⚡(flag=${b.flag})` : '');
-    log(`[BATTERY] ${b.pct}%  flag=${b.flag}  raw=${b.raw}`, 'ok');
+    log(`[BATTERY] ${b.pct}%  flag=${b.flag}  via="${b.dev}"  raw=${b.raw}`, 'ok');
   } catch(err){ log(`battery error: ${err.message}`, 'warn'); }
 }
 function stopBat(){ if(batTimer){ clearInterval(batTimer); batTimer=null; } $('batStop').disabled=true; $('batPoll').disabled=false; }
