@@ -14,26 +14,25 @@ com.nekodash.wlmouse-battery.sdPlugin/
 
 ## 前提
 - Stream Deck アプリ **6.5 以上**（SDK v2 の Node.js プラグイン対応版）
-- Windows x64（node-hid の prebuilt を使用。node-hid 3.x は N-API なので Node バージョン非依存）
+- **Windows**（x64 / arm64 / ia32 の prebuilt を同梱済み）
 
-## インストール手順（Windows）
+## インストール手順（Windows）— **npm install 不要**
 
-1. 依存をインストール（`.sdPlugin` フォルダ内で実行）
-   ```bash
-   cd streamdeck-plugin/com.nekodash.wlmouse-battery.sdPlugin
-   npm install
-   ```
-2. `.sdPlugin` フォルダごと Stream Deck のプラグインフォルダへコピー
+依存（`node-hid` / `ws` / `pkg-prebuilds`）と Windows 用ネイティブバイナリは
+`node_modules/` に**同梱済み**なので、そのまま置くだけで動きます。
+
+1. `.sdPlugin` フォルダごと Stream Deck のプラグインフォルダへコピー
    ```
    %APPDATA%\Elgato\StreamDeck\Plugins\
    ```
    → `...\Plugins\com.nekodash.wlmouse-battery.sdPlugin\` になるように置く
-   （node_modules ごとコピーすること）
-3. Stream Deck アプリを再起動（タスクトレイから終了 → 再度起動）
-4. アクション一覧の **WLmouse → Battery Level** を任意のキーにドラッグ
+2. Stream Deck アプリを再起動（タスクトレイから終了 → 再度起動）
+3. アクション一覧の **WLmouse → Battery Level** を任意のキーにドラッグ
 
-> 開発中はコピーの代わりにシンボリックリンクが便利:
-> `streamdeck link com.nekodash.wlmouse-battery.sdPlugin`（要 `@elgato/cli`）→ `streamdeck restart com.nekodash.wlmouse-battery`
+> コピーの代わりにシンボリックリンクでもOK（要 `@elgato/cli`）:
+> `streamdeck link com.nekodash.wlmouse-battery.sdPlugin` → `streamdeck restart com.nekodash.wlmouse-battery`
+
+> 依存を作り直したい場合のみ（同梱物を消したときなど）: `.sdPlugin` 内で `npm install`。
 
 ## 動作
 - 60秒ごとに残量を取得し、キーに `72%` とバッテリーアイコンを描画（20%以下=赤 / 50%以下=黄 / それ以上=緑）

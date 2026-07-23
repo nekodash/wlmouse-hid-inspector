@@ -1,4 +1,7 @@
 node_modules/
+# ただし Stream Deck プラグインの依存は同梱する（npm install 不要にするため）
+!streamdeck-plugin/com.nekodash.wlmouse-battery.sdPlugin/node_modules/
+!streamdeck-plugin/com.nekodash.wlmouse-battery.sdPlugin/node_modules/**
 .wrangler/
 .dev.vars
 *.log
