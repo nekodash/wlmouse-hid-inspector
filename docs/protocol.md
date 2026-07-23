@@ -46,7 +46,15 @@ a1 00 <cat> <len> <bank> <cmd> <data...>   (先頭 a1=応答, a2/a3 も観測)
 - **応答**: `a1 00 02 02 00 83 <flag> <pct>`
   - 残量%: **data[7]**（0x00〜0x64）
   - 充電フラグ(推定): **data[6]**（未充電時 00。充電時の値は未検証）
-- 手順: `sendFeatureReport(0, req)` → `receiveFeatureReport(0)` で応答取得
+- 手順: `sendFeatureReport(0, req)` → 少し待って `receiveFeatureReport(0)`
+
+### 重要な注意点（実装で嵌まったところ）
+- レシーバーは **複数のHIDインターフェイス**を同名で公開する。feature が通るのは一部だけ。
+  → `getDevices()` で全部開き、feature 書き込みが通る方を使う。
+- 送信直後に読むと **要求のエコー**（先頭 `0x00`, pct=0）が返る。
+- さらに **`a0`＝pending（マウスへRF問い合わせ中）**。実データは **先頭 `0xa1`**。
+  → `0xa1` になるまで「送信→40ms待つ→読む」をリトライする。
+- 確認済み: 先頭 `a1` の応答 `a1 00 02 02 00 83 00 48` で 72% を取得（ブラウザ実機）。
 
 ### node-hid での再現（Part 3 用メモ）
 - feature reportId 0 → node-hid では配列先頭に 0x00 を付けて

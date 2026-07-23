@@ -1,0 +1,14 @@
+{
+  "name": "wlmouse-battery",
+  "version": "1.0.0",
+  "description": "Read WLMOUSE MIAO 8K battery via node-hid",
+  "main": "battery.js",
+  "bin": { "wlmouse-battery": "battery.js" },
+  "scripts": {
+    "start": "node battery.js",
+    "watch": "node battery.js --watch"
+  },
+  "dependencies": {
+    "node-hid": "^3.1.2"
+  }
+}
