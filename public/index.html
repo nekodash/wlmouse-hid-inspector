@@ -227,19 +227,24 @@ $('sendFeat').onclick = async () => {
 // ---- Battery (confirmed protocol: feature reportId 0, cmd 0x83) ----
 let batTimer = null;
 const BAT_REQ = [0x00, 0x00, 0x02, 0x02, 0x00, 0x83, 0x00];
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function readBattery(){
   let lastErr = '';
   for(const d of devices){
     try {
       const req = new Uint8Array(64); req.set(BAT_REQ);
       await d.sendFeatureReport(0, req);
-      const dv = await d.receiveFeatureReport(0);
-      const a = new Uint8Array(dv.buffer);
-      if(a[5] === 0x83){ return { pct: a[7], flag: a[6], raw: hex(dv), dev: d.productName }; }
-      lastErr = `cmd=0x${(a[5]||0).toString(16)}`;
+      // 本物の応答(先頭0xa1)が来るまでリトライ。要求のエコー(先頭0x00)は無視。
+      for(let i = 0; i < 20; i++){
+        const dv = await d.receiveFeatureReport(0);
+        const a = new Uint8Array(dv.buffer);
+        if(a[0] >= 0xa0 && a[5] === 0x83){ return { pct: a[7], flag: a[6], raw: hex(dv), dev: d.productName }; }
+        lastErr = `echo/未応答 (先頭0x${(a[0]||0).toString(16)})`;
+        await sleep(25);
+      }
     } catch(e){ lastErr = e.message; }
   }
-  log(`[BATTERY] どのインターフェイスからも 0x83 応答なし (最後: ${lastErr})`, 'warn');
+  log(`[BATTERY] 有効な0x83応答が得られませんでした (最後: ${lastErr})`, 'warn');
   return null;
 }
 async function showBattery(){
