@@ -231,20 +231,21 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function readBattery(){
   let lastErr = '';
   for(const d of devices){
-    try {
-      const req = new Uint8Array(64); req.set(BAT_REQ);
-      await d.sendFeatureReport(0, req);
-      // 本物の応答(先頭0xa1)が来るまでリトライ。要求のエコー(先頭0x00)は無視。
-      for(let i = 0; i < 20; i++){
+    // このインターフェイスで「送信→待つ→読む」を数回試す。a0(pending)は無視し a1(実データ)を待つ。
+    for(let attempt = 0; attempt < 10; attempt++){
+      try {
+        const req = new Uint8Array(64); req.set(BAT_REQ);
+        await d.sendFeatureReport(0, req);
+        await sleep(40);
         const dv = await d.receiveFeatureReport(0);
         const a = new Uint8Array(dv.buffer);
-        if(a[0] >= 0xa0 && a[5] === 0x83){ return { pct: a[7], flag: a[6], raw: hex(dv), dev: d.productName }; }
-        lastErr = `echo/未応答 (先頭0x${(a[0]||0).toString(16)})`;
-        await sleep(25);
-      }
-    } catch(e){ lastErr = e.message; }
+        if(a[0] === 0xa1 && a[5] === 0x83){ return { pct: a[7], flag: a[6], raw: hex(dv), dev: d.productName }; }
+        lastErr = `先頭0x${(a[0]||0).toString(16)} pct=${a[7]}`;
+      } catch(e){ lastErr = e.message; break; } // feature不可のインターフェイス→次へ
+      await sleep(40);
+    }
   }
-  log(`[BATTERY] 有効な0x83応答が得られませんでした (最後: ${lastErr})`, 'warn');
+  log(`[BATTERY] 有効な0x83応答(先頭0xa1)が得られませんでした (最後: ${lastErr})`, 'warn');
   return null;
 }
 async function showBattery(){
