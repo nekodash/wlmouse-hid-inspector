@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WLmouse Battery</title>
+<style>
+  :root{ --bg:#0d1117; --panel:#161b22; --border:#30363d; --fg:#e6edf3; --muted:#8b949e; --accent:#2f81f7; --ok:#3fb950; --warn:#d29922; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:system-ui,sans-serif; background:var(--bg); color:var(--fg); min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; padding:24px; }
+  h1{ font-size:15px; color:var(--muted); font-weight:600; letter-spacing:.4px; margin:0; }
+  .card{ background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:32px 40px; text-align:center; min-width:280px; }
+  .pct{ font-size:72px; font-weight:800; line-height:1; }
+  .bar{ height:12px; border-radius:6px; background:#21262d; overflow:hidden; margin:18px 0 8px; }
+  .bar > span{ display:block; height:100%; background:var(--ok); transition:width .4s, background .4s; }
+  .sub{ color:var(--muted); font-size:13px; min-height:18px; }
+  .chg{ color:var(--warn); font-weight:700; }
+  button{ background:var(--accent); color:#fff; border:0; border-radius:8px; padding:10px 20px; font-size:14px; cursor:pointer; }
+  button.sec{ background:#21262d; border:1px solid var(--border); color:var(--fg); }
+  .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:center; }
+  .warnbox{ color:var(--warn); font-size:13px; max-width:340px; text-align:center; }
+  code{ background:#21262d; padding:1px 5px; border-radius:4px; font-size:12px; }
+  a{ color:var(--accent); font-size:12px; }
+</style>
+</head>
+<body>
+  <h1>WLMOUSE MIAO 8K — BATTERY</h1>
+
+  <div id="secWarn" class="warnbox" style="display:none">⚠ HTTPS でないと WebHID が使えません。Cloudflare Pages の https:// で開いてください。</div>
+
+  <div class="card">
+    <div class="pct" id="pct">—</div>
+    <div class="bar"><span id="bar" style="width:0%"></span></div>
+    <div class="sub" id="sub">未接続</div>
+  </div>
+
+  <div class="row">
+    <button id="connect">マウスに接続</button>
+    <button id="refresh" class="sec" disabled>今すぐ更新</button>
+    <label class="sub"><input type="checkbox" id="auto" checked> 10秒ごとに自動更新</label>
+  </div>
+
+  <a href="./">🔧 詳細な解析ツール(インスペクタ)を開く</a>
+
+<script>
+const $ = id => document.getElementById(id);
+let devices = [], timer = null;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const hex = a => [...a].map(b => b.toString(16).padStart(2,'0')).join(' ');
+const BAT_REQ = [0x00, 0x00, 0x02, 0x02, 0x00, 0x83, 0x00];
+
+if(!window.isSecureContext || !navigator.hid){ $('secWarn').style.display='block'; }
+
+async function readBattery(){
+  for(const d of devices){
+    for(let attempt = 0; attempt < 10; attempt++){
+      try{
+        const req = new Uint8Array(64); req.set(BAT_REQ);
+        await d.sendFeatureReport(0, req);
+        await sleep(40);
+        const dv = await d.receiveFeatureReport(0);
+        const a = new Uint8Array(dv.buffer);
+        if(a[0] === 0xa1 && a[5] === 0x83){ return { pct:a[7], flag:a[6], raw:hex(a.slice(0,8)) }; }
+      }catch(e){ break; }
+      await sleep(40);
+    }
+  }
+  return null;
+}
+
+function paint(b){
+  if(!b){ $('sub').textContent = '取得失敗（マウスがスリープ/OFFかも）'; return; }
+  $('pct').textContent = b.pct + '%';
+  const bar = $('bar'); bar.style.width = Math.min(100, b.pct) + '%';
+  bar.style.background = b.pct <= 20 ? '#f85149' : (b.pct <= 50 ? '#d29922' : '#3fb950');
+  $('sub').innerHTML = (b.flag ? '<span class="chg">⚡ 充電中</span> · ' : '') +
+    `更新 ${new Date().toLocaleTimeString()} · <code>${b.raw}</code>`;
+}
+
+async function update(){
+  if(!devices.length) return;
+  $('refresh').disabled = true;
+  paint(await readBattery());
+  $('refresh').disabled = false;
+}
+
+function schedule(){
+  if(timer){ clearInterval(timer); timer = null; }
+  if($('auto').checked && devices.length){ timer = setInterval(update, 10000); }
+}
+
+$('connect').onclick = async () => {
+  try{
+    await navigator.hid.requestDevice({ filters: [{ vendorId: 0x36a7, productId: 0xa866 }] });
+    devices = (await navigator.hid.getDevices()).filter(d => d.vendorId===0x36a7 && d.productId===0xa866);
+    if(!devices.length){ $('sub').textContent = 'デバイスが選択されませんでした'; return; }
+    for(const d of devices){ try{ if(!d.opened) await d.open(); }catch{} }
+    $('sub').textContent = '接続しました。取得中…';
+    $('refresh').disabled = false;
+    await update();
+    schedule();
+  }catch(e){ $('sub').textContent = '接続エラー: ' + e.message; }
+};
+$('refresh').onclick = update;
+$('auto').onchange = schedule;
+</script>
+</body>
+</html>
