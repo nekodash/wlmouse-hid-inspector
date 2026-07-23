@@ -1,0 +1,11 @@
+{
+  "name": "wlmouse-battery-streamdeck",
+  "version": "1.0.0",
+  "description": "Stream Deck plugin showing WLMOUSE MIAO 8K battery level",
+  "main": "plugin.js",
+  "private": true,
+  "dependencies": {
+    "node-hid": "^3.1.2",
+    "ws": "^8.18.0"
+  }
+}
