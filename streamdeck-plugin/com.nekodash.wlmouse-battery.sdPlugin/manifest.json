@@ -14,7 +14,7 @@
     { "Platform": "windows", "MinimumVersion": "10" },
     { "Platform": "mac", "MinimumVersion": "12" }
   ],
-  "Nodejs": { "Version": "20", "Debug": "enabled" },
+  "Nodejs": { "Version": "20" },
   "CodePath": "plugin.js",
   "Actions": [
     {
@@ -24,7 +24,7 @@
       "Tooltip": "WLmouse MIAO 8K の残量を表示（押すと即更新）",
       "Controllers": ["Keypad"],
       "States": [
-        { "Image": "imgs/key", "TitleAlignment": "bottom", "FontSize": "14" }
+        { "Image": "imgs/key" }
       ]
     }
   ]
