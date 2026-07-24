@@ -1,20 +1,27 @@
 {
   "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "UUID": "com.nekodash.wlmouse-battery",
   "Name": "WLmouse Battery",
   "Version": "1.0.0.0",
   "Author": "nekodash",
   "Description": "WLMOUSE MIAO 8K のバッテリー残量をキーに表示します。",
-  "Category": "WLmouse",
+  "Category": "WLmouse Battery",
   "CategoryIcon": "imgs/category",
   "Icon": "imgs/category",
   "URL": "https://github.com/nekodash/wlmouse-hid-inspector",
   "SDKVersion": 2,
-  "Software": { "MinimumVersion": "6.5" },
+  "Software": {
+    "MinimumVersion": "6.5"
+  },
   "OS": [
-    { "Platform": "windows", "MinimumVersion": "10" },
-    { "Platform": "mac", "MinimumVersion": "12" }
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    }
   ],
-  "Nodejs": { "Version": "20" },
+  "Nodejs": {
+    "Version": "20"
+  },
   "CodePath": "plugin.js",
   "Actions": [
     {
@@ -22,9 +29,13 @@
       "UUID": "com.nekodash.wlmouse-battery.level",
       "Icon": "imgs/action",
       "Tooltip": "WLmouse MIAO 8K の残量を表示（押すと即更新）",
-      "Controllers": ["Keypad"],
+      "Controllers": [
+        "Keypad"
+      ],
       "States": [
-        { "Image": "imgs/key" }
+        {
+          "Image": "imgs/key"
+        }
       ]
     }
   ]

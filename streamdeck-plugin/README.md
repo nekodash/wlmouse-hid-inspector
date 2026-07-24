@@ -16,7 +16,21 @@ com.nekodash.wlmouse-battery.sdPlugin/
 - Stream Deck アプリ **6.5 以上**（SDK v2 の Node.js プラグイン対応版）
 - **Windows**（x64 / arm64 / ia32 の prebuilt を同梱済み）
 
-## インストール手順（Windows）— **npm install 不要**
+## かんたん導入：`.streamDeckPlugin`（推奨）
+
+配布用パッケージ [`dist/com.nekodash.wlmouse-battery.streamDeckPlugin`](dist/com.nekodash.wlmouse-battery.streamDeckPlugin) を
+**ダブルクリック**すると Stream Deck が自動でインストールします（フォルダのコピー不要）。
+配布時は GitHub Releases にこのファイルを添付するのが手軽です。
+
+パッケージの作り直しは（Node がある環境で）:
+```bash
+cd streamdeck-plugin
+npx @elgato/cli pack com.nekodash.wlmouse-battery.sdPlugin --output dist --force
+```
+
+---
+
+## 手動導入（開発時）— **npm install 不要**
 
 依存（`node-hid` / `ws` / `pkg-prebuilds`）と Windows 用ネイティブバイナリは
 `node_modules/` に**同梱済み**なので、そのまま置くだけで動きます。
