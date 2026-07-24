@@ -15,6 +15,7 @@ const ws = new WebSocket(`ws://127.0.0.1:${port}`);
 const contexts = new Set();     // 表示中のキー
 let busy = false;
 let last = null;                // 直近の取得結果（取得失敗時のフォールバック用）
+let lastImg = null;             // 直近に描画したキー画像（差分がある時だけ再送）
 
 function send(obj) { try { ws.send(JSON.stringify(obj)); } catch (e) { console.error(e); } }
 function setImage(context, image) { send({ event: 'setImage', context, payload: { image, target: 0 } }); }
@@ -47,7 +48,10 @@ async function refreshAll() {
     if (b) last = b;                      // 成功時のみ更新
     const use = b || last;                // 失敗時は直近値を維持
     const img = keyImage(use ? use.pct : null, use ? use.charging : false);
-    for (const c of contexts) setImage(c, img);
+    if (img !== lastImg) {                // 値が変化した時だけ送信（毎周期の無駄送信を防ぐ）
+      lastImg = img;
+      for (const c of contexts) setImage(c, img);
+    }
   } catch (e) {
     console.error('refresh error', e);
   } finally {
@@ -65,6 +69,7 @@ ws.on('message', (data) => {
   switch (msg.event) {
     case 'willAppear':
       contexts.add(msg.context);
+      if (lastImg) setImage(msg.context, lastImg);   // 既知値があれば即描画
       refreshAll();
       break;
     case 'willDisappear':
